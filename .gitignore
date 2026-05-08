@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Checkpoints
+checkpoints/
+
+# Weights & Biases
+wandb/
+
+# Visualisation outputs
+sanity_vis/
+
+# Logs
+*.log

@@ -1,0 +1,5 @@
+torch>=2.2
+numpy>=1.24
+wandb>=0.17
+torchmetrics>=1.4
+lpips>=0.1.4
