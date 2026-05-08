@@ -270,6 +270,69 @@ class StructureGate(nn.Module):
         return gate * feat_coloured + (1.0 - gate) * feat_original
 
 
+class GrayscaleBaseline(nn.Module):
+    """
+    SPAD-only grayscale reconstruction baseline.
+
+    Same SPAD pathway and U-Net backbone as ReliFormer, but no CMOS branch,
+    no colour injection, and a single-channel output head. Used as a benchmark
+    to measure how much the CMOS colour pathway contributes.
+    """
+
+    def __init__(self, t: int = 11, base_c: int = 32, n_blocks: int = 2, n_fpm: int = 2):
+        super().__init__()
+        self.t = t
+        self.center = t // 2
+
+        c1, c2, c3, c4 = base_c, base_c * 2, base_c * 4, base_c * 8
+
+        self.pre = PhotonReliabilityEncoder(c1, n_fpm)
+        self.rgta = ReliabilityGatedTemporalAttention(c1, t)
+        self.edge_pyr = SPADEdgePyramid(c1)
+
+        self.down1 = DownBlock(c1, c2, n_blocks)
+        self.down2 = DownBlock(c2, c3, n_blocks)
+        self.down3 = DownBlock(c3, c4, n_blocks)
+        self.mid = nn.Sequential(*[NAFBlock(c4) for _ in range(n_blocks * 2)])
+        self.up3 = UpBlockAdd(c4, c3, c3, n_blocks)
+        self.up2 = UpBlockAdd(c3, c2, c2, n_blocks)
+        self.up1 = UpBlockAdd(c2, c1, c1, n_blocks)
+
+        self.gray_head = nn.Sequential(
+            nn.PixelShuffle(2),
+            nn.Conv2d(c1 // 4, 1, 3, padding=1),
+            nn.Sigmoid(),
+        )
+
+        self.last_edge_preds: List[torch.Tensor] = []
+        self.last_luma_proxy: torch.Tensor | None = None
+
+    def forward(self, spad: torch.Tensor, cmos: torch.Tensor | None = None) -> Dict[str, torch.Tensor]:
+        feat_list, rel_list = [], []
+        for tt in range(self.t):
+            feat_t, rel_t = self.pre(spad[:, tt])
+            feat_list.append(feat_t)
+            rel_list.append(rel_t)
+
+        mean_rel = torch.stack(rel_list, dim=1).mean(dim=1)
+        fused = self.rgta(feat_list, rel_list)
+
+        edges, luma_proxy = self.edge_pyr(fused, mean_rel)
+        self.last_edge_preds = edges
+        self.last_luma_proxy = luma_proxy
+
+        x, s1 = self.down1(fused)
+        x, s2 = self.down2(x)
+        x, s3 = self.down3(x)
+        x = self.mid(x)
+        x = self.up3(x, s3)
+        x = self.up2(x, s2)
+        x = self.up1(x, s1)
+
+        gray = self.gray_head(x)
+        return {"gray": gray, "luma_proxy": luma_proxy, "edges": edges}
+
+
 class ReliFormer(nn.Module):
     def __init__(self, t: int = 11, base_c: int = 32, n_blocks: int = 2, n_fpm: int = 2):
         super().__init__()
