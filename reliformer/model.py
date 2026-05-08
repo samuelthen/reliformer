@@ -27,33 +27,54 @@ def cmos_exposure_validity(
     return (dark_ok * sat_ok).clamp(0.0, 1.0)
 
 
-class NAFBlock(nn.Module):
-    def __init__(self, c: int):
-        super().__init__()
-        self.norm = nn.GroupNorm(1, c)
-        self.pw1 = nn.Conv2d(c, c * 2, 1)
-        self.dw = nn.Conv2d(c * 2, c * 2, 3, padding=1, groups=c * 2)
-        self.pw2 = nn.Conv2d(c, c, 1)
-        self.beta = nn.Parameter(torch.zeros(1, c, 1, 1))
-
+class SimpleGate(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h = self.pw1(self.norm(x))
-        h = self.dw(h)
-        a, b = h.chunk(2, dim=1)
-        h = self.pw2(a * torch.sigmoid(b))
-        return x + self.beta * h
+        x1, x2 = x.chunk(2, dim=1)
+        return x1 * x2
+
+
+class NAFBlock(nn.Module):
+    def __init__(self, c: int, dw_expand: int = 2, ffn_expand: int = 2):
+        super().__init__()
+        dw_c = c * dw_expand
+        ffn_c = c * ffn_expand
+        self.norm1 = nn.LayerNorm(c)
+        self.conv1 = nn.Conv2d(c, dw_c, 1)
+        self.dw_conv = nn.Conv2d(dw_c, dw_c, 3, padding=1, groups=dw_c)
+        self.sg = SimpleGate()
+        self.sca = nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Conv2d(dw_c // 2, dw_c // 2, 1))
+        self.conv2 = nn.Conv2d(dw_c // 2, c, 1)
+        self.beta = nn.Parameter(torch.zeros(1, c, 1, 1))
+        self.norm2 = nn.LayerNorm(c)
+        self.conv3 = nn.Conv2d(c, ffn_c, 1)
+        self.sg2 = SimpleGate()
+        self.conv4 = nn.Conv2d(ffn_c // 2, c, 1)
+        self.gamma = nn.Parameter(torch.zeros(1, c, 1, 1))
+
+    def forward(self, inp: torch.Tensor) -> torch.Tensor:
+        x = self.norm1(inp.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
+        x = self.dw_conv(self.conv1(x))
+        x = self.sg(x)
+        x = x * self.sca(x)
+        x = self.conv2(x)
+        inp = inp + x * self.beta
+
+        x = self.norm2(inp.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
+        x = self.sg2(self.conv3(x))
+        x = self.conv4(x)
+        return inp + x * self.gamma
 
 
 class DownBlock(nn.Module):
     def __init__(self, in_c: int, out_c: int, n_blocks: int):
         super().__init__()
-        self.down = nn.Conv2d(in_c, out_c, 3, stride=2, padding=1)
-        self.body = nn.Sequential(*[NAFBlock(out_c) for _ in range(n_blocks)])
+        self.blocks = nn.Sequential(*[NAFBlock(in_c) for _ in range(n_blocks)])
+        self.down = nn.Sequential(nn.PixelUnshuffle(2), nn.Conv2d(in_c * 4, out_c, 3, padding=1))
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        x = self.blocks(x)
         skip = x
-        x = self.body(self.down(x))
-        return x, skip
+        return self.down(x), skip
 
 
 class UpBlockAdd(nn.Module):

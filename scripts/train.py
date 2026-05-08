@@ -186,6 +186,7 @@ def main():
         running_total = 0.0
         running_rgb = 0.0
         running_edge = 0.0
+        running_grad = 0.0
 
         for step in range(1, args.steps_per_epoch + 1):
             try:
@@ -212,6 +213,7 @@ def main():
             running_total += logs["total"]
             running_rgb += logs["rgb"]
             running_edge += logs["edge"]
+            running_grad += logs["grad"]
 
             if wandb is not None:
                 wandb.log(
@@ -219,6 +221,7 @@ def main():
                         "train/loss_total": logs["total"],
                         "train/loss_rgb": logs["rgb"],
                         "train/loss_edge": logs["edge"],
+                        "train/loss_grad": logs["grad"],
                         "train/lr": opt.param_groups[0]["lr"],
                         "train/epoch": epoch,
                         "train/step_in_epoch": step,
@@ -227,7 +230,7 @@ def main():
                 )
 
             if step % 20 == 0:
-                print(f"epoch={epoch:03d} step={step:04d} loss={logs['total']:.4f} rgb={logs['rgb']:.4f} edge={logs['edge']:.4f}")
+                print(f"epoch={epoch:03d} step={step:04d} loss={logs['total']:.4f} rgb={logs['rgb']:.4f} edge={logs['edge']:.4f} grad={logs['grad']:.4f}")
 
         sch.step()
         eval_out = evaluate(
@@ -241,9 +244,10 @@ def main():
         avg_total = running_total / max(args.steps_per_epoch, 1)
         avg_rgb = running_rgb / max(args.steps_per_epoch, 1)
         avg_edge = running_edge / max(args.steps_per_epoch, 1)
+        avg_grad = running_grad / max(args.steps_per_epoch, 1)
         print(
             f"epoch={epoch:03d} "
-            f"train_total={avg_total:.4f} train_rgb={avg_rgb:.4f} train_edge={avg_edge:.4f} "
+            f"train_total={avg_total:.4f} train_rgb={avg_rgb:.4f} train_edge={avg_edge:.4f} train_grad={avg_grad:.4f} "
             f"val_loss={eval_out['loss']:.4f} val_psnr={eval_out['psnr']:.2f}dB "
             f"val_ssim={eval_out['ssim']:.4f} val_lpips={eval_out['lpips']:.4f} eval_n={eval_out['samples']}"
         )

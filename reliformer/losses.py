@@ -42,7 +42,13 @@ def edge_distillation_loss(edge_preds: List[torch.Tensor], gt_l: torch.Tensor) -
     return total / max(len(edge_preds), 1)
 
 
-LAMBDA_DEFAULT = {"rgb": 1.0, "edge": 0.02}
+def grad_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    diff_x = (pred[:, :, :, 1:] - pred[:, :, :, :-1]) - (target[:, :, :, 1:] - target[:, :, :, :-1])
+    diff_y = (pred[:, :, 1:, :] - pred[:, :, :-1, :]) - (target[:, :, 1:, :] - target[:, :, :-1, :])
+    return diff_x.abs().mean() + diff_y.abs().mean()
+
+
+LAMBDA_DEFAULT = {"rgb": 1.0, "edge": 0.02, "grad": 0.1}
 
 
 def compute_loss(
@@ -66,6 +72,7 @@ def compute_loss(
 
     crit = CharbonnierLoss()
     l_rgb = crit(pred["rgb"], gt_rgb)
+    l_grad = grad_loss(pred["rgb"], gt_rgb)
 
     if getattr(model, "last_edge_preds", None):
         with torch.amp.autocast(device_type=device.type, enabled=False):
@@ -73,10 +80,11 @@ def compute_loss(
     else:
         l_edge = pred["rgb"].new_zeros(())
 
-    loss = lambdas["rgb"] * l_rgb + lambdas["edge"] * l_edge
+    loss = lambdas["rgb"] * l_rgb + lambdas["edge"] * l_edge + lambdas.get("grad", 0.1) * l_grad
     logs = {
         "rgb": float(l_rgb.detach().cpu()),
         "edge": float(l_edge.detach().cpu()),
+        "grad": float(l_grad.detach().cpu()),
         "total": float(loss.detach().cpu()),
     }
     return loss, logs
