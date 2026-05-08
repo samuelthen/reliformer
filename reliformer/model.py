@@ -372,6 +372,8 @@ class ReliFormer(nn.Module):
         self.up2 = UpBlockAdd(c3, c2, c2, n_blocks)
         self.up1 = UpBlockAdd(c2, c1, c1, n_blocks)
 
+        self.colour_refine = nn.Sequential(*[NAFBlock(c1) for _ in range(3)])
+
         self.rgb_head = nn.Sequential(nn.PixelShuffle(2), nn.Conv2d(c1 // 4, 3, 3, padding=1), nn.Sigmoid())
 
         self.last_edge_preds: List[torch.Tensor] = []
@@ -424,6 +426,7 @@ class ReliFormer(nn.Module):
 
         x = self.up1(x, s1)
         x = self._inject_colour(x, self.cca_u1, self.gate_u1, color_feats[0], edges[0])
+        x = self.colour_refine(x)
 
         rgb = self.rgb_head(x)
         luma = 0.2126 * rgb[:, 0:1] + 0.7152 * rgb[:, 1:2] + 0.0722 * rgb[:, 2:3]
