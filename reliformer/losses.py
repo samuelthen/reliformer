@@ -42,7 +42,7 @@ def edge_distillation_loss(edge_preds: List[torch.Tensor], gt_l: torch.Tensor) -
     return total / max(len(edge_preds), 1)
 
 
-LAMBDA_DEFAULT = {"rgb": 1.0, "edge": 0.05}
+LAMBDA_DEFAULT = {"rgb": 1.0, "edge": 0.02}
 
 
 def compute_loss(

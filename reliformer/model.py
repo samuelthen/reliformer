@@ -370,7 +370,9 @@ class ReliFormer(nn.Module):
         self.up2 = UpBlockAdd(c3, c2, c2, n_blocks)
         self.up1 = UpBlockAdd(c2, c1, c1, n_blocks)
 
-        self.colour_refine = nn.Sequential(*[NAFBlock(c1) for _ in range(3)])
+        self.refine_u3 = NAFBlock(c3)
+        self.refine_u2 = NAFBlock(c2)
+        self.colour_refine = NAFBlock(c1)
 
         self.rgb_head = nn.Sequential(nn.PixelShuffle(2), nn.Conv2d(c1 // 4, 3, 3, padding=1), nn.Sigmoid())
 
@@ -418,9 +420,11 @@ class ReliFormer(nn.Module):
 
         x = self.up3(x, s3)
         x = self._inject_colour(x, self.cca_u3, self.gate_u3, color_feats[2], edges[2])
+        x = self.refine_u3(x)
 
         x = self.up2(x, s2)
         x = self._inject_colour(x, self.cca_u2, self.gate_u2, color_feats[1], edges[1])
+        x = self.refine_u2(x)
 
         x = self.up1(x, s1)
         x = self._inject_colour(x, self.cca_u1, self.gate_u1, color_feats[0], edges[0])
