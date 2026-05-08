@@ -192,6 +192,8 @@ class AsymmetricCrossModalFusion(nn.Module):
         self.q_proj = nn.Conv2d(c, r, 1)
         self.k_proj = nn.Conv2d(c, r, 1)
         self.v_proj = nn.Conv2d(c, c, 1)
+        nn.init.zeros_(self.v_proj.weight)
+        nn.init.zeros_(self.v_proj.bias)
         self.out_proj = nn.Conv2d(c, c, 1)
         nn.init.zeros_(self.out_proj.weight)
         nn.init.zeros_(self.out_proj.bias)
